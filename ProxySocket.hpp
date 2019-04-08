@@ -44,6 +44,20 @@ class ProxySocket
         }
         return true;
     }
+    void OverConnection()
+    {
+        close(client);
+        close(server);
+    }
+    char* GetClientIp()
+    {
+            struct sockaddr_in clientAddr;
+            socklen_t len =sizeof(clientAddr);
+            if((getsockname(client,(struct sockaddr*)&clientAddr,&len))==0)
+            {
+                return inet_ntoa(clientAddr.sin_addr);
+            }
+    }
 };
 
 

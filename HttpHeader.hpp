@@ -9,6 +9,7 @@ public  :
     char url[maxLen];
     char host[maxLen];
     char cookie[maxLen<<2];
+    bool isKeepAlive=false;
     HttpHeader(char * buffer)
     {
         char * analysis;
@@ -46,6 +47,23 @@ public  :
                     if(!strcmp(title,"Cookie"))
                     {
                         memcpy(cookie,&analysis[8],strlen(analysis)-8);
+                    }
+                }
+            }
+            else if(analysis[0]=='P')
+            {
+                 //std::cout<<analysis<<std::endl;
+                //Cookie: nc_sameSiteCookielax=true; nc_sameSiteCookiestrict=true; nc_username=Con
+                if(strlen(analysis)>18)
+                {
+                    char *title=new char[18];
+                    memcpy(title,analysis,16);
+                    if(!strcmp(title,"Proxy-Connection"))
+                    {
+                        char status[100];
+                        memcpy(status,&analysis[18],strlen(analysis)-18);
+                        if(!strcmp(status,"keep-alive"))
+                            isKeepAlive=true;
                     }
                 }
             }

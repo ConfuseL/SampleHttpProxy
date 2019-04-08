@@ -42,14 +42,21 @@ bool Init()
 //代理服务 线程的run函数
 void * ProxyServer(void * curRequest)
 {
-        cout<<"正在为fd："<<((ProxySocket *)curRequest)->client<<"服务"<<endl;
+        bool longConnection=false;
+        bool first=true;
+        //cout<<"正在为fd："<<((ProxySocket *)curRequest)->client<<"服务"<<endl;
         char *Buffer=new char[1<<20];
-        int recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,65507,0);
-        cout<<recvStatu<<endl;
-
-        char *cache=new char[strlen(Buffer)+1];
+        struct timeval timeout = {5, 0};
+        setsockopt(((ProxySocket*)curRequest)->client, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
+        int recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,1<<20,0);
+        if(recvStatu==-1)
+            {
+                cerr<<"无法接受客户端消息"<<errno<<endl;
+                return NULL;
+            }
+       // char *cache=new char[strlen(Buffer)+1];
        // memset(Buffer,0,100000);
-        memcpy(cache,Buffer,strlen(Buffer)+1);
+        //memcpy(cache,Buffer,strlen(Buffer)+1);
         HttpHeader *header=new HttpHeader(Buffer);
         if(header!=NULL)
         {
@@ -57,6 +64,8 @@ void * ProxyServer(void * curRequest)
             cout<<"url:"<<header->url<<endl;
             cout<<"Host:"<<header->host<<endl;
             cout<<"Cookie:"<<header->cookie<<endl;
+            cout<<"是否长连接:"<<header->isKeepAlive<<endl;
+            longConnection=header->isKeepAlive;
         }
         if(((ProxySocket*)curRequest)->TryConnect2Server(header->host))
         {
@@ -64,14 +73,29 @@ void * ProxyServer(void * curRequest)
            // char *messagess="GET http://utsc.guet.edu.cn/ HTTP/1.1\r\nHost: utsc.guet.edu.cn\r\n\r\n";
           //  char * messagess="GET http://utsc.guet.edu.cn/ HTTP/1.1\r\nHost: utsc.guet.edu.cn\r\nProxy-Connection: keep-alive\r\nCache-Control: max-age=0\r\nUpgrade-Insecure-Requests: 1\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.96 Safari/537.36\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8\r\nAccept-Language: zh-CN,zh;q=0.9\r\nCookie: ASP.NET_SessionId=kz5ebu45dtxt2pjk24z5nr45\r\n\r\n";
            //\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.96 Safari/537.36\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8\r\nAccept-Encoding: gzip, deflate\r\nAccept-Language: zh-CN,zh;q=0.9\r\nCookie: ASP.NET_SessionId=kz5ebu45dtxt2pjk24z5nr45
-            cout<<Buffer<<endl;
+            //cout<<Buffer<<endl;
+            int i=1;
+        do
+        {
+            cout<<i++<<"次"<<endl;
+            if(!first)
+            {
+            char *Buffer=new char[1<<20];
+            recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,65507,0);
+            cout<<recvStatu<<endl;
+            }
+        if(first)
+        {
+            first=false;
+        }
+            if(recvStatu==-1)
+            break;
             send(((ProxySocket*)curRequest)->server,Buffer,strlen(Buffer),0);
             int Left=1<<20;
             int nCount=0;
             recvStatu=1;
-            int i=1;
-             struct timeval timeout = {3, 0};
-    setsockopt(((ProxySocket*)curRequest)->server, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
+            struct timeval timeout = {3, 0};
+            setsockopt(((ProxySocket*)curRequest)->server, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
             while(1)
             {
             recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer+nCount,Left,0);
@@ -103,16 +127,24 @@ void * ProxyServer(void * curRequest)
             //recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0);
 
             //cout<<Buffer<<endl;
-            struct sockaddr_in clientAddr;
-                socklen_t len =sizeof(clientAddr);
-            if((getsockname(((ProxySocket*)curRequest)->client,(struct sockaddr*)&clientAddr,&len))==0)
+            if(nCount==0)
             {
-                cout<<"客户端端口号"<<ntohs(clientAddr.sin_port)<<endl;
+ cout<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<"fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+                ((ProxySocket*)curRequest)->OverConnection();
+                return NULL;
             }
-            int _size=send(((ProxySocket*)curRequest)->client,Buffer,recvStatu,0);
-            cout<<"发送数据大小"<<_size<<endl;
+            int _size=send(((ProxySocket*)curRequest)->client,Buffer,nCount,0);
+            cout<<"发送数据大小"<<_size<<"实际数据大小:"<<nCount<<endl;
+            if(_size==-1)
+                cout<<"错误码:"<<errno<<endl;
+
+
         }
-        cout<<"over"<<endl;
+        while(longConnection);
+        }
+        cout<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<"fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+
+        ((ProxySocket*)curRequest)->OverConnection();
        // close(((ProxySocket*)curRequest)->client);
         //close(((ProxySocket*)curRequest)->server);
         return NULL;
@@ -126,16 +158,17 @@ int main()
 
     while(1)
     {
-        cout<<"等待新用户连接"<<endl;
+        //cout<<"等待新用户连接"<<endl;
         clientSockfd=accept(proxySockfd,NULL,NULL);
-        if(clientSockfd!=0)
+        cout<<clientSockfd<<" ";
+        if(clientSockfd!=-1||clientSockfd!=0)
         {
         ProxySocket *curRequest=new ProxySocket();
         curRequest->client=clientSockfd;
-        cout<<"新连接客户端 fd："<<clientSockfd<<endl;
+        cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
         pthread_t newId;
         ThreadHandle handle=pthread_create(&newId,NULL,ProxyServer,curRequest);
-        close(handle);
+        //close(handle);
         }
         sleep(0.2);
     }
