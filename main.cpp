@@ -7,6 +7,7 @@
 #include<unistd.h>
 #include"ProxySocket.hpp"
 #include"HttpHeader.hpp"
+#include"ThreadPool.hpp"
 using namespace std;
 typedef  int ThreadHandle;
 const int PROXYPORT=16924;
@@ -155,7 +156,7 @@ int main()
         if(!Init())
         return -1;
     int clientSockfd;
-
+    ThreadPool *threadPool=new ThreadPool(5);
     while(1)
     {
         //cout<<"等待新用户连接"<<endl;
@@ -166,12 +167,14 @@ int main()
         ProxySocket *curRequest=new ProxySocket();
         curRequest->client=clientSockfd;
         cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
-        pthread_t newId;
-        ThreadHandle handle=pthread_create(&newId,NULL,ProxyServer,curRequest);
+       // pthread_t newId;
+        threadPool->Add(ProxyServer,curRequest);
+        //ThreadHandle handle=pthread_create(&newId,NULL,ProxyServer,curRequest);
         //close(handle);
         }
         sleep(0.2);
     }
+    delete threadPool;
     close(proxySockfd);
     return 0;
 }
