@@ -48,6 +48,7 @@ void * ProxyServer(void * curRequest)
         cout<<recvStatu<<endl;
 
         char *cache=new char[strlen(Buffer)+1];
+       // memset(Buffer,0,100000);
         memcpy(cache,Buffer,strlen(Buffer)+1);
         HttpHeader *header=new HttpHeader(Buffer);
         if(header!=NULL)
@@ -65,47 +66,55 @@ void * ProxyServer(void * curRequest)
            //\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.96 Safari/537.36\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8\r\nAccept-Encoding: gzip, deflate\r\nAccept-Language: zh-CN,zh;q=0.9\r\nCookie: ASP.NET_SessionId=kz5ebu45dtxt2pjk24z5nr45
             cout<<Buffer<<endl;
             send(((ProxySocket*)curRequest)->server,Buffer,strlen(Buffer),0);
-            //int Left=1<<20;
-            //int nCount=0;
-            //recvStatu=1;
-            //int i=1;
-            //while(1)
-            //{
-           // cout<<i++<<endl;
-            //recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer+nCount,Left,0);
-            //if(recvStatu<0)recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0);
-            //
-            if(recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0)<0)
+            int Left=1<<20;
+            int nCount=0;
+            recvStatu=1;
+            int i=1;
+             struct timeval timeout = {3, 0};
+    setsockopt(((ProxySocket*)curRequest)->server, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
+            while(1)
             {
-                cerr<<"无法接受服务器发来的http报文"<<errno<<endl;
+            recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer+nCount,Left,0);
+            if(recvStatu<0)
+            {
+            if(errno==EINTR)
+            {
+                cout<<"尝试跳过"<<endl;
+                continue;
+            }
+            else if(errno==EWOULDBLOCK||errno==EAGAIN)
+            //recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0);if(recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0)<0)
+            {
+                cerr<<"请求超时 结束读取"<<endl;
                 sleep(0.2);
-                close(((ProxySocket*)curRequest)->server);
-            //    break;
-            //}
-            //if(recvStatu==0)
-            //{
-              //  cout<<"接收完毕"<<endl;
-              //  Buffer[nCount+1]=0;
-              //  break;
-            //}
-            //Left-=recvStatu;
-            //nCount+=recvStBufferatu;
+                break;
+            }
+            }
+
+            if(recvStatu==0)
+            {
+                cout<<"接收正常完毕 长度:"<<nCount<<endl;
+                Buffer[nCount+1]=0;
+                break;
+            }
+            Left-=recvStatu;
+            nCount+=recvStatu;
             }
             //recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer,1<<20,0);
 
-            cout<<Buffer<<endl;
+            //cout<<Buffer<<endl;
             struct sockaddr_in clientAddr;
                 socklen_t len =sizeof(clientAddr);
             if((getsockname(((ProxySocket*)curRequest)->client,(struct sockaddr*)&clientAddr,&len))==0)
             {
                 cout<<"客户端端口号"<<ntohs(clientAddr.sin_port)<<endl;
             }
-            int _size=send(((ProxySocket*)curRequest)->client,Buffer,strlen(Buffer),0);
-            cout<<"send返回数据大小"<<_size<<endl;
-            cout<<"缓存区大小"<<strlen(Buffer)<<endl;
+            int _size=send(((ProxySocket*)curRequest)->client,Buffer,recvStatu,0);
+            cout<<"发送数据大小"<<_size<<endl;
         }
         cout<<"over"<<endl;
-        close(((ProxySocket*)curRequest)->client);
+       // close(((ProxySocket*)curRequest)->client);
+        //close(((ProxySocket*)curRequest)->server);
         return NULL;
 }
 
