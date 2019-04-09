@@ -51,12 +51,15 @@ class ProxySocket
     }
     char* GetClientIp()
     {
+        char *emptyString=(char *)"";
             struct sockaddr_in clientAddr;
             socklen_t len =sizeof(clientAddr);
             if((getsockname(client,(struct sockaddr*)&clientAddr,&len))==0)
             {
                 return inet_ntoa(clientAddr.sin_addr);
             }
+        else
+            return emptyString;
     }
 };
 
