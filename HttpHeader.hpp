@@ -62,7 +62,7 @@ public  :
                     {
                         char status[100];
                         memcpy(status,&analysis[18],strlen(analysis)-18);
-                        std::cout<<status<<std::endl;
+                       // std::cout<<status<<std::endl;
                         if(!strcasecmp(status,"keep-alive"))
                             isKeepAlive=true;
                     }

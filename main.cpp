@@ -1,4 +1,5 @@
-#include <iostream>
+#include<iostream>
+#include<signal.h>
 #include<thread>
 #include<netinet/in.h>
 #include<sys/wait.h>
@@ -17,6 +18,7 @@ int proxySockfd;
 struct sockaddr_in proxyAddr;
 Filter *filter;
 const char * staticHtml="GET /strive.html HTTP/1.1\r\nHost: 120.77.249.7\r\n\r\n";
+ThreadPool *threadPool;
 //初始化，为代理创建一个监听套接字
 bool Init()
 {
@@ -42,6 +44,14 @@ bool Init()
     //初始化过滤对象
     filter=new Filter();
     return true;
+}
+
+void FreePort(int ignore)
+{
+    delete threadPool;
+    close(proxySockfd);	
+    cout<<"\n简易Http代理关闭端口 正常退出"<<endl;
+    exit(0);
 }
 
 //代理服务 线程的任务函数
@@ -72,22 +82,19 @@ void * ProxyServer(void * curRequest)
         }
         if(filter->JudgeHost(header->host))
         {
-            cout<<"过滤目标"<<endl;
+            //cout<<"过滤目标"<<endl;
             memcpy( header->host,"120.77.249.7",strlen("120.77.249.7"));
             skip=true;
         }
         if(((ProxySocket*)curRequest)->TryConnect2Server(header->host))
         {
             cout<<"与"<<header->host<<"连接成功,开始通信"<<endl;
-            int i=1;
         do
         {
-            cout<<i++<<"次"<<endl;
             if(!first)
             {
             char *Buffer=new char[1<<20];
             recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,1<<20,0);
-            //cout<<recvStatu<<endl;
             }
             if(recvStatu==-1)
             break;
@@ -156,11 +163,12 @@ void * ProxyServer(void * curRequest)
 
 int main()
 {
+    signal(SIGINT, FreePort);
     if(!Init())
         return -1;
     int clientSockfd;
     //最大线程数为5的线程池
-    ThreadPool *threadPool=new ThreadPool(5);
+    threadPool=new ThreadPool(5);
     while(1)
     {
         //cout<<"等待新用户连接"<<endl;
@@ -178,7 +186,5 @@ int main()
         }
         sleep(0.2);
     }
-    delete threadPool; 
-    close(proxySockfd);
     return 0;
 }
