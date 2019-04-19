@@ -10,6 +10,8 @@
 #include"HttpHeader.hpp"
 #include"ThreadPool.hpp"
 #include"Filter.hpp"
+#include"CacheManager.hpp"
+#include<time.h>
 using namespace std;
 typedef  int ThreadHandle;
 const int PROXYPORT=16924;
@@ -49,7 +51,7 @@ bool Init()
 void FreePort(int ignore)
 {
     delete threadPool;
-    close(proxySockfd);	
+    close(proxySockfd);
     cout<<"\n简易Http代理关闭端口 正常退出"<<endl;
     exit(0);
 }
@@ -60,15 +62,22 @@ void * ProxyServer(void * curRequest)
         bool longConnection=false;
         bool first=true;
         bool skip=false;
+	time_t timep;
         //cout<<"正在为fd："<<((ProxySocket *)curRequest)->client<<"服务"<<endl;
         char *Buffer=new char[1<<20];
+	int recvStatu;
         struct timeval timeout = {5, 0};
         setsockopt(((ProxySocket*)curRequest)->client, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
-        int recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,1<<20,0);
+	recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,1<<20,0);
         if(recvStatu==-1)
         {
-            cerr<<"无法接受客户端消息"<<errno<<endl;
-            return NULL;
+            //cerr<<"无法接受客户端消息,错误码："<<errno<<endl;
+          // time (&timep);
+        //cout<<ctime(&timep)<<((ProxySocket*)curRequest)->GetClientIp()<<" fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+
+        ((ProxySocket*)curRequest)->OverConnection();
+
+	    return NULL;
         }
         HttpHeader *header=new HttpHeader(Buffer);
         if(header!=NULL)
@@ -80,9 +89,17 @@ void * ProxyServer(void * curRequest)
             cout<<"是否长连接:"<<header->isKeepAlive<<endl;
             longConnection=header->isKeepAlive;
         }
+	else
+	{
+	time (&timep);
+	cout<<ctime(&timep)<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<" fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+
+        ((ProxySocket*)curRequest)->OverConnection();
+        return NULL;
+	}
         if(filter->JudgeHost(header->host))
         {
-            //cout<<"过滤目标"<<endl;
+            cout<<"检测到过滤目标，正在转移网址"<<endl;
             memcpy( header->host,"120.77.249.7",strlen("120.77.249.7"));
             skip=true;
         }
@@ -111,8 +128,9 @@ void * ProxyServer(void * curRequest)
             int Left=1<<20;
             int nCount=0;
             recvStatu=1;
-            struct timeval timeout = {3, 0};
+            struct timeval timeout = {2, 0};
             setsockopt(((ProxySocket*)curRequest)->server, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
+            memset(Buffer, 0x00, sizeof (char) * (1<<20));
             while(1)
             {
             recvStatu=recv(((ProxySocket*)curRequest)->server,Buffer+nCount,Left,0);
@@ -142,10 +160,12 @@ void * ProxyServer(void * curRequest)
             }
             if(nCount==0)
             {
-            cout<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<"fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
-                ((ProxySocket*)curRequest)->OverConnection();
-                return NULL;
+                  time (&timep);
+        cout<<ctime(&timep)<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<" fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+((ProxySocket*)curRequest)->OverConnection();
+	       	    return NULL;
             }
+            CacheManager::GetIntance()->MakeCache(Buffer,header->url,nCount);
             int _size=send(((ProxySocket*)curRequest)->client,Buffer,nCount,0);
             //cout<<"发送数据大小"<<_size<<"实际数据大小:"<<nCount<<endl;
             if(_size==-1)
@@ -155,9 +175,10 @@ void * ProxyServer(void * curRequest)
         }
         while(longConnection);
         }
-        cout<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<"fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
+        time (&timep);
+        cout<<ctime(&timep)<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<" fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
 
-        ((ProxySocket*)curRequest)->OverConnection();
+	((ProxySocket*)curRequest)->OverConnection();
         return NULL;
 }
 
@@ -167,18 +188,18 @@ int main()
     if(!Init())
         return -1;
     int clientSockfd;
-    //最大线程数为5的线程池
-    threadPool=new ThreadPool(5);
+    //最大线程数为10的线程池
+    threadPool=new ThreadPool(10);
     while(1)
     {
-        //cout<<"等待新用户连接"<<endl;
+       // cout<<"等待新用户连接"<<endl;
         clientSockfd=accept(proxySockfd,NULL,NULL);
         //cout<<clientSockfd<<" ";
         if(clientSockfd!=-1||clientSockfd!=0)
         {
         ProxySocket *curRequest=new ProxySocket();
         curRequest->client=clientSockfd;
-        cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
+       // cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
         if(filter->JudgeIp(curRequest->GetClientIp()))
             cout<<"客户端"<<curRequest->GetClientIp()<<"是过滤对象,屏蔽"<<endl;
         else
