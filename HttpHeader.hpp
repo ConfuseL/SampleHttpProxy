@@ -5,10 +5,11 @@ const int maxLen=1<<10;
 class HttpHeader
 {
 public  :
-    char method[4];
-    char url[maxLen];
-    char host[maxLen];
-    char cookie[maxLen<<2];
+    char method[4]={0};
+    char url[maxLen]={0};
+    char host[maxLen]={0};
+    char cookie[maxLen<<2]={0};
+    char date[30]={0};
     bool isKeepAlive=false;
     HttpHeader(char * buffer)
     {
@@ -68,8 +69,48 @@ public  :
                     }
                 }
             }
+
+            if (strstr(analysis, "Date") != NULL) {
+            memcpy(date, &analysis[6], strlen(analysis) - 6);
+            }
+
             analysis=strtok_r(NULL,key,&remain);
         }
+    }
+    void GetNewHttpHeader(char *buffer,char *_date)
+    {
+        const char *_host = "Host";
+        const char *newfield = "If-Modified-Since: ";
+        char temp[1<<20];
+        char *pos = strstr(buffer, _host);
+        for (int i = 0; i < strlen(pos); i++) {
+            temp[i] = pos[i];
+        }
+        *pos = '\0';
+        while (*newfield != '\0') {  
+            *pos++ = *newfield++;
+        }
+        while (*_date != '\0') {
+            *pos++ = *_date++;
+        }
+        *pos++ = '\r';
+        *pos++ = '\n';
+        for (int i = 0; i < strlen(temp); i++) {
+            *pos++ = temp[i];
+        }
+    }
+    bool Is304(char * buffer)
+    {
+        char *p, *ptr, num[10]={0}, tempBuffer[1<<20]={0};
+        const char * delim = "\r\n";
+        memcpy(tempBuffer, buffer, strlen(buffer));
+        p = strtok_r(tempBuffer, delim, &ptr);
+        memcpy(num, &p[9], 3);
+        if (strcmp(num, "304") == 0) {  
+            std::cout<<"响应头回复304"<<std::endl;
+            return true;
+        }
+        return false;
     }
 };
 

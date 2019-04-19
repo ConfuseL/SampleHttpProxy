@@ -32,9 +32,11 @@ bool Init()
     proxyAddr.sin_family=AF_INET;
     proxyAddr.sin_port=htons(PROXYPORT);
     proxyAddr.sin_addr.s_addr=INADDR_ANY;
+    int sock_reuse=1;
+    setsockopt(proxySockfd,SOL_SOCKET,SO_REUSEADDR,(char *)&sock_reuse,sizeof(sock_reuse)); 
     if(bind(proxySockfd,(struct sockaddr *)&proxyAddr,sizeof(proxyAddr))==ERR)
     {
-        cerr<<"无法为代理绑定套接字"<<endl;
+        cerr<<"无法为代理绑定套接字"<<errno<<endl;
         return false;
     }
         if(listen(proxySockfd,BACKLOG)==ERR)
@@ -62,10 +64,12 @@ void * ProxyServer(void * curRequest)
         bool longConnection=false;
         bool first=true;
         bool skip=false;
-	time_t timep;
-        //cout<<"正在为fd："<<((ProxySocket *)curRequest)->client<<"服务"<<endl;
+        bool cache=false;
+	    time_t timep;
         char *Buffer=new char[1<<20];
-	int recvStatu;
+        char *cacheFile=new char[1<<20];
+	   int recvStatu;
+       int _size;
         struct timeval timeout = {5, 0};
         setsockopt(((ProxySocket*)curRequest)->client, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(struct timeval));
 	recvStatu=recv(((ProxySocket*)curRequest)->client,Buffer,1<<20,0);
@@ -85,9 +89,10 @@ void * ProxyServer(void * curRequest)
             cout<<"请求方法:"<<header->method<<endl;
             cout<<"url:"<<header->url<<endl;
             cout<<"Host:"<<header->host<<endl;
-            cout<<"Cookie:"<<header->cookie<<endl;
-            cout<<"是否长连接:"<<header->isKeepAlive<<endl;
+            //cout<<"Cookie:"<<header->cookie<<endl;
+            //cout<<"是否长连接:"<<header->isKeepAlive<<endl;
             longConnection=header->isKeepAlive;
+            cache=CacheManager::GetIntance()->TryGetCache(header->url,Buffer,cacheFile);
         }
 	else
 	{
@@ -164,9 +169,17 @@ void * ProxyServer(void * curRequest)
         cout<<ctime(&timep)<<((ProxySocket*)curRequest)->GetClientIp()<<"与"<<header->host<<" fd: "<<((ProxySocket*)curRequest)->client<<"结束通信"<<endl;
 ((ProxySocket*)curRequest)->OverConnection();
 	       	    return NULL;
+            }       
+            if(cache&&header->Is304(Buffer))
+            {
+                _size=send(((ProxySocket*)curRequest)->client,cacheFile,1<<20,0);
+                cout<<"成功发送缓存"<<endl;
             }
-            CacheManager::GetIntance()->MakeCache(Buffer,header->url,nCount);
-            int _size=send(((ProxySocket*)curRequest)->client,Buffer,nCount,0);
+            else
+            {
+                CacheManager::GetIntance()->MakeCache(Buffer,header->url,nCount);
+                _size=send(((ProxySocket*)curRequest)->client,Buffer,nCount,0);
+            }    
             //cout<<"发送数据大小"<<_size<<"实际数据大小:"<<nCount<<endl;
             if(_size==-1)
                 cout<<"错误码:"<<errno<<endl;
@@ -199,7 +212,7 @@ int main()
         {
         ProxySocket *curRequest=new ProxySocket();
         curRequest->client=clientSockfd;
-       // cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
+        //cout<<"新连接客户端"<<curRequest->GetClientIp()<<endl;
         if(filter->JudgeIp(curRequest->GetClientIp()))
             cout<<"客户端"<<curRequest->GetClientIp()<<"是过滤对象,屏蔽"<<endl;
         else
@@ -207,5 +220,6 @@ int main()
         }
         sleep(0.2);
     }
+    cout<<"GG"<<endl;
     return 0;
 }
